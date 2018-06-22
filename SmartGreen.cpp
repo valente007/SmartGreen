@@ -16,6 +16,8 @@ int hsol2=0;
 int hAlarm2=0;
 int hsol3=0;
 int hAlarm3=0;
+float valeurEtalonnageB=350;//valeur capteur qd dans l'eau à 100%
+float valeurEtalonnageH=998;//valeur qd est dans l'air soit 0%
 ///////////////////
 
 //Pompe
@@ -36,7 +38,7 @@ bool demandLaunchPump;
 bool refreshParam;
 
 //parametres de l'appli
-int limitHumidité=50;//en pourcent
+int limitHumidite=50;//en pourcent
 int frequenceMesure=20*60;//en sec
 int tempsArrosage=3*1000;//en ms
 
@@ -60,12 +62,25 @@ void launchPump(int time){
 	digitalWrite(pinPompe,false);
 }
 
+float convertDataH(float mesure){
+	float pourcentage=100-((mesure-valeurEtalonnageB)/((valeurEtalonnageH-valeurEtalonnageB)/100));
+	if(mesure>valeurEtalonnageH) pourcentage =0;
+	if(mesure<valeurEtalonnageB) pourcentage =100;
+	return pourcentage;
+}
+
 void getHumidite(){
+	float temp =0;
 	//Capteurs Humidités
 		hsol1=analogRead(pinAnaH1);
 		hAlarm1=digitalRead(pinDigiH1);
 		Serial.print("Capteur Humidité num1 : ");
+		Serial.print("  ");
 		Serial.print(hsol1);
+		Serial.print("  ");
+		temp=convertDataH(hsol1);
+		Serial.println(temp,1);
+		Serial.print(" %");
 		Serial.print("\t");
 		Serial.print (hAlarm1);
 		Serial.print("\n");
@@ -73,7 +88,12 @@ void getHumidite(){
 		hsol2=analogRead(pinAnaH2);
 		hAlarm2=digitalRead(pinDigiH2);
 		Serial.print("Capteur Humidité num2 : ");
+		Serial.print("  ");
 		Serial.print(hsol2);
+		Serial.print("  ");
+		temp=convertDataH(hsol2);
+		Serial.println(temp,1);
+		Serial.print(" %");
 		Serial.print("\t");
 		Serial.print (hAlarm2);
 		Serial.print("\n");
@@ -81,19 +101,25 @@ void getHumidite(){
 		hsol3=analogRead(pinAnaH3);
 		hAlarm3=digitalRead(pinDigiH3);
 		Serial.print("Capteur Humidité num3 : ");
+		Serial.print("  ");
 		Serial.print(hsol3);
+		Serial.print("  ");
+		temp=convertDataH(hsol3);
+		Serial.println(temp,1);
+		Serial.print(" %");
 		Serial.print("\t");
 		Serial.print (hAlarm3);
 		Serial.print("\n");
 }
 
 void checkHumidity(){
-	int moy = (hsol1+hsol2+hsol3)/3;
+	float moy = (convertDataH(hsol1)+convertDataH(hsol2)+convertDataH(hsol3))/3;
 	Serial.print("Moyenne Capteurs Humidités : ");
-	Serial.print(hsol3);
-	Serial.print("\n");
+	Serial.println(moy,1);
+	Serial.print(" %\n");
 
-	if(moy<limitHumidité){
+	if(moy<limitHumidite){
+		Serial.print("Pompe lancée \n");
 		launchPump(tempsArrosage);
 	}
 }
@@ -131,6 +157,9 @@ bool compDate(){
 	if((t.hour*3600+t.min*60+t.sec-hoursOld*3600-minutesOld*60-secondesOld)>=frequenceMesure){
 		res=true;
 	}
+	Serial.print("La dernière mesure il y a : ");
+	Serial.print((t.hour*3600+t.min*60+t.sec-hoursOld*3600-minutesOld*60-secondesOld));
+	Serial.print("sec\n");
 	return res;
 }
 void writeDataToSD() {
@@ -174,7 +203,6 @@ void setup() {
 
  //todo init les params en lisant fichier de param
  readParamSD();
-
  //LastMAJ = temps actuelle;
  Serial.print("Welcome in SmartGreen \n");
 }
@@ -182,6 +210,9 @@ void setup() {
 
 void loop() {
 
+//	getDate();
+//	getHumidite();
+//	checkHumidity();
 if(demandMAJ || compDate())
 {
 	getDate();
@@ -190,12 +221,11 @@ if(demandMAJ || compDate())
 
 	if(demandMAJ){
 		//todo envoi de données via Bluetooth
-		demandMAJ=false;
 	}
 	else checkHumidity();
 
 	tOld=t;
-
+	demandMAJ=false;
  }
 
 	if(demandLaunchPump){
