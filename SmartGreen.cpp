@@ -45,7 +45,7 @@ bool refreshParam;
 
 //parametres de l'appli
 int limitHumidite=50;//en pourcent
-int frequenceMesure=20;//en sec
+int frequenceMesure=10*60;//en sec
 int tempsArrosage=3*1000;//en ms
 
 
@@ -156,15 +156,20 @@ void getDate(){
 
 bool compDate(){
 	bool res =false;
-	int hoursOld=tOld.hour;
-	int minutesOld=tOld.min;
-	int secondesOld=tOld.sec;
 	getDate();
-	if((t.hour*3600+t.min*60+t.sec-hoursOld*3600-minutesOld*60-secondesOld)>=frequenceMesure){
+	long calcul1=t.hour*3600+t.min*60+t.sec;
+	long calcul2=tOld.hour*3600+tOld.min*60+tOld.sec;
+	long lastCalcul=0;
+	if(calcul2>calcul1){
+		lastCalcul=23*60*60+59*60+59-calcul2+calcul1;
+	}else{
+		lastCalcul=calcul1-calcul2;
+	}
+	if(lastCalcul>=frequenceMesure){
 		res=true;
 	}
 //	Serial.print("La dernière mesure il y a : ");
-	Serial.print((t.hour*3600+t.min*60+t.sec-hoursOld*3600-minutesOld*60-secondesOld));
+	Serial.print((lastCalcul));
 	Serial.print("sec\n");
 	return res;
 }
@@ -175,15 +180,15 @@ void writeDataToSD() {
 	  if (dataFile) {
 	    //Serial.print("Writing to Data.csv...");
 	    String data=dateToDigit(t.year)
-	    		+","
+	    		+"-"
 	    		+dateToDigit(t.mon)
-				+","
+				+"-"
 				+dateToDigit(t.mday)
 				+","
 				+dateToDigit(t.hour)
-				+","
+				+":"
 				+dateToDigit(t.min)
-				+","
+				+":"
 				+dateToDigit(t.sec)
 				+","
 				+convertDataH(hsol1)
@@ -198,7 +203,7 @@ void writeDataToSD() {
 	    //Serial.println("done.");
 	  } else {
 	    // if the file didn't open, print an error:
-	    Serial.println("error opening test.csv");
+	    Serial.println("error opening Data.csv");
 	  }
 }
 
@@ -208,13 +213,13 @@ void initDataFile(){
 		dataFile = SD.open("Data.csv", FILE_WRITE);
 		if (dataFile) {
 				//Serial.print("Init and Writing to Data.csv...");
-				dataFile.println("year,month,day,hour,minutes,secondes,H1,H2,H3");
+				dataFile.println("year-month-day,hour:minutes:secondes,H1,H2,H3");
 				// close the file:
 				dataFile.close();
 				Serial.println("Data.csv is create.");
 			  } else {
 				// if the file didn't open, print an error:
-				Serial.println("error opening test.csv");
+				Serial.println("error opening Data.csv");
 			  }
 		}else Serial.print("Data.csv already exist\n");
 }
