@@ -3,6 +3,7 @@
 #include "ds3231-master/ds3231.h"
 #include <SPI.h>
 #include "SdFat.h"
+#include <SimpleDHT.h>
 
 SdFat SD;
 #define SD_CS_PIN SS
@@ -29,6 +30,11 @@ float valeurEtalonnageH=1000;//valeur qd est dans l'air soit 0%
 //Pompe
 int pinPompe=7;
 ///////
+
+int pinDHT11 = 8;
+SimpleDHT11 dht11;
+byte temperature = 0;
+byte humidity = 0;
 
 //RTC
 //int year=0;
@@ -75,7 +81,7 @@ float convertDataH(float mesure){
 	return pourcentage;
 }
 
-void getHumidite(){
+void getHumidityGnd(){
 	float temp =0;
 	//Capteurs Humidités
 		hsol1=analogRead(pinAnaH1);
@@ -118,7 +124,7 @@ void getHumidite(){
 //		Serial.print("\n");
 }
 
-void checkHumidity(){
+void checkHumidityGnd(){
 	float moy = (convertDataH(hsol1)+convertDataH(hsol2)+convertDataH(hsol3))/3;
 //	Serial.print("Moyenne Capteurs Humidités : ");
 //	Serial.println(moy,1);
@@ -152,6 +158,17 @@ void getDate(){
 //		hour=t.hour;
 //		minutes=t.min;
 //		secondes=t.sec;
+}
+
+void getHumidityAir(){
+	int err = SimpleDHTErrSuccess;
+	if ((err = dht11.read(pinDHT11, &temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
+	Serial.print("Read DHT11 failed, err="); Serial.println(err);delay(1000);
+	return;
+	}
+
+//	  Serial.print((int)temperature); Serial.print(" *C, ");
+//	  Serial.print((int)humidity); Serial.println(" H");
 }
 
 bool compDate(){
@@ -195,7 +212,11 @@ void writeDataToSD() {
 				+","
 				+convertDataH(hsol2)
 				+","
-				+convertDataH(hsol3);
+				+convertDataH(hsol3)
+				+","
+				+(int)temperature
+				+","
+				+(int)humidity;
 	    dataFile.println(data);
 	    Serial.println(data);
 	    // close the file:
@@ -213,7 +234,7 @@ void initDataFile(){
 		dataFile = SD.open("Data.csv", FILE_WRITE);
 		if (dataFile) {
 				//Serial.print("Init and Writing to Data.csv...");
-				dataFile.println("year-month-day,hour:minutes:secondes,H1,H2,H3");
+				dataFile.println("year-month-day,hour:minutes:secondes,H1,H2,H3,tempAir,HAir");
 				// close the file:
 				dataFile.close();
 				Serial.println("Data.csv is create.");
@@ -289,7 +310,8 @@ void setup() {
  //obtenir les premières données
  getDate();
  tOld=t;
- getHumidite();
+ getHumidityGnd();
+ getHumidityAir();
  //checkHumidity();
  initParamFile();
  initDataFile();
@@ -311,13 +333,14 @@ void loop() {
 	if(demandMAJ || compDate())
 	{
 		getDate();
-		getHumidite();
+		getHumidityGnd();
+		getHumidityAir();
 		writeDataToSD();
 
 		if(demandMAJ){
 			//todo envoi de données via Bluetooth
 		}
-		else checkHumidity();
+		else checkHumidityGnd();
 
 		tOld=t;
 		demandMAJ=false;
