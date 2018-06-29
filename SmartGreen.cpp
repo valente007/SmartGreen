@@ -4,58 +4,59 @@
 #include <SPI.h>
 #include "SdFat.h"
 #include <SimpleDHT.h>
+#include <SoftwareSerial.h>
 
-SdFat SD;
+
 #define SD_CS_PIN SS
-//File paramFile;
-File dataFile;
-//capteurs humidités
-int pinAnaH1=0;
-int pinDigiH1=2;
-int pinAnaH2=1;
-int pinDigiH2=3;
-int pinAnaH3=2;
-int pinDigiH3=4;
+SdFat SD;
 
-int hsol1=0;
-int hAlarm1=0;
-int hsol2=0;
-int hAlarm2=0;
-int hsol3=0;
-int hAlarm3=0;
-float valeurEtalonnageB=350;//valeur capteur qd dans l'eau à 100%
-float valeurEtalonnageH=1000;//valeur qd est dans l'air soit 0%
-///////////////////
+#define PIN_POMPE 7
 
-//Pompe
-int pinPompe=7;
-///////
+#define PIN_ANA_H1 0
+#define PIN_ANA_H2 1
+#define PIN_ANA_H3 2
+#define PIN_DIGIT_H1 2
+#define PIN_DIGIT_H2 3
+#define PIN_DIGIT_H3 4
 
-int pinDHT11 = 8;
-SimpleDHT11 dht11;
-byte temperature = 0;
-byte humidity = 0;
+#define PIN_DHT11 8
 
-//RTC
-//int year=0;
-//int month=0;
-//int day=0;
-//int hour=0;
-//int minutes=0;
-//int secondes=0;
+
+#define VALEUR_ETALO_B 350.0 //valeur capteur qd dans l'eau à 100%
+#define VALEUR_ETALO_H 1000.0 //valeur qd est dans l'air soit 0%
+
+//Valeur par défaut parametres de l'appli
+#define LIMITE_HUMIDITE 50  //en pourcent
+#define FREQ_MESURE 10.0 //en sec
+#define TEMPS_ARROSAGE 3000 //en ms
+
+int limiteHumidite;
+int frequenceMesure;
+int temspArrosage;
+
+//Bluetooth AT09
+SoftwareSerial BLESerial(5, 6); // RX, TX
+
+struct HumidityGND{
+	int hsol1;
+	int hAlarm1;
+	int hsol2;
+	int hAlarm2;
+	int hsol3;
+	int hAlarm3;
+};
+
+struct TempDHT11{
+	int temp;
+	int humidity;
+};
 
 //actions via l'appli
 bool demandMAJ;
 bool demandLaunchPump;
 bool refreshParam;
 
-//parametres de l'appli
-int limitHumidite=50;//en pourcent
-int frequenceMesure=10*60;//en sec
-int tempsArrosage=3*1000;//en ms
-
-
-struct ts t;
+struct ts tG;
 struct ts tOld;
 
 String dateToDigit(int date){
@@ -68,110 +69,80 @@ String dateToDigit(int date){
 	return sec;
 }
 
-void launchPump(int time){
-	digitalWrite(pinPompe,true);
-	delay(time);
-	digitalWrite(pinPompe,false);
-}
-
 float convertDataH(float mesure){
-	float pourcentage=100-((mesure-valeurEtalonnageB)/((valeurEtalonnageH-valeurEtalonnageB)/100));
-	if(mesure>valeurEtalonnageH) pourcentage =0;
-	if(mesure<valeurEtalonnageB) pourcentage =100;
+	float pourcentage=100-((mesure-VALEUR_ETALO_B)/((VALEUR_ETALO_H-VALEUR_ETALO_B)/100));
+	if(mesure>VALEUR_ETALO_H) pourcentage =0;
+	if(mesure<VALEUR_ETALO_B) pourcentage =100;
 	return pourcentage;
 }
 
-void getHumidityGnd(){
-	float temp =0;
+HumidityGND getHumidityGnd(){
 	//Capteurs Humidités
-		hsol1=analogRead(pinAnaH1);
-		hAlarm1=digitalRead(pinDigiH1);
-//		Serial.print("Capteur Humidité num1 : ");
-//		Serial.print("  ");
-//		Serial.print(hsol1);
-//		Serial.print("  ");
-//		temp=convertDataH(hsol1);
-//		Serial.println(temp,1);
-//		Serial.print(" %");
-//		Serial.print("\t");
-//		Serial.print (hAlarm1);
-//		Serial.print("\n");
-
-		hsol2=analogRead(pinAnaH2);
-		hAlarm2=digitalRead(pinDigiH2);
-//		Serial.print("Capteur Humidité num2 : ");
-//		Serial.print("  ");
-//		Serial.print(hsol2);
-//		Serial.print("  ");
-//		temp=convertDataH(hsol2);
-//		Serial.println(temp,1);
-//		Serial.print(" %");
-//		Serial.print("\t");
-//		Serial.print (hAlarm2);
-//		Serial.print("\n");
-
-		hsol3=analogRead(pinAnaH3);
-		hAlarm3=digitalRead(pinDigiH3);
-//		Serial.print("Capteur Humidité num3 : ");
-//		Serial.print("  ");
-//		Serial.print(hsol3);
-//		Serial.print("  ");
-//		temp=convertDataH(hsol3);
-//		Serial.println(temp,1);
-//		Serial.print(" %");
-//		Serial.print("\t");
-//		Serial.print (hAlarm3);
-//		Serial.print("\n");
+	HumidityGND humidityGND;
+	int hsol1=0;
+	int hAlarm1=0;
+	int hsol2=0;
+	int hAlarm2=0;
+	int hsol3=0;
+	int hAlarm3=0;
+	hsol1=analogRead(PIN_ANA_H1);
+	hAlarm1=digitalRead(PIN_DIGIT_H1);
+	hsol2=analogRead(PIN_ANA_H2);
+	hAlarm2=digitalRead(PIN_DIGIT_H2);
+	hsol3=analogRead(PIN_ANA_H3);
+	hAlarm3=digitalRead(PIN_DIGIT_H3);
+	humidityGND.hsol1=convertDataH(hsol1);
+	humidityGND.hsol2=convertDataH(hsol2);
+	humidityGND.hsol3=convertDataH(hsol3);
+	humidityGND.hAlarm1=hAlarm1;
+	humidityGND.hAlarm2=hAlarm2;
+	humidityGND.hAlarm3=hAlarm3;
+	return humidityGND;
 }
 
-void checkHumidityGnd(){
-	float moy = (convertDataH(hsol1)+convertDataH(hsol2)+convertDataH(hsol3))/3;
-//	Serial.print("Moyenne Capteurs Humidités : ");
-//	Serial.println(moy,1);
-//	Serial.print(" %\n");
+bool checkHumidityGnd(HumidityGND humidityGND){
+	bool res;
+	float moy = (humidityGND.hsol1+humidityGND.hsol2+humidityGND.hsol3)/3;
 
-	if(moy<limitHumidite){
-		Serial.print("Pompe lancée \n");
-		launchPump(tempsArrosage);
+	if(moy<limiteHumidite){
+		res=true;
 	}
+	else{
+		res=false;
+	}
+	return res;
 }
 
-void getDate(){
+void launchPump(int time){
+	digitalWrite(PIN_POMPE,true);
+	delay(time);
+	digitalWrite(PIN_POMPE,false);
+}
+
+ts getDate(){
 	//RTC
-		DS3231_get(&t);
-//		Serial.print("date : ");
-//		Serial.print(dateToDigit(t.mday));
-//		Serial.print("/");
-//		Serial.print(dateToDigit(t.mon));
-//		Serial.print("/");
-//		Serial.print(dateToDigit(t.year));
-//		Serial.print("\t Heure : ");
-//		Serial.print(dateToDigit(t.hour));
-//		Serial.print(":");
-//		Serial.print(dateToDigit(t.min));
-//		Serial.print(".");
-//		Serial.print(dateToDigit(t.sec));
-//		Serial.print("\n");
-//		year=t.year;
-//		month=t.mon;
-//		day=t.mday;
-//		hour=t.hour;
-//		minutes=t.min;
-//		secondes=t.sec;
+	struct ts t;
+	DS3231_get(&t);
+	return t;
 }
 
-void getHumidityAir(){
+TempDHT11 getHumidityAir()
+{
+	SimpleDHT11 dht11;
+	TempDHT11 tempTab;
+	byte temperature = 0;
+	byte humidity = 0;
 	int err = SimpleDHTErrSuccess;
-	if ((err = dht11.read(pinDHT11, &temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
+	if ((err = dht11.read(PIN_DHT11, &temperature, &humidity, NULL)) != SimpleDHTErrSuccess)
+	{
 	Serial.print("Read DHT11 failed, err="); Serial.println(err);delay(1000);
-	return;
 	}
-
-//	  Serial.print((int)temperature); Serial.print(" *C, ");
-//	  Serial.print((int)humidity); Serial.println(" H");
+	tempTab.humidity=humidity;
+	tempTab.temp=temperature;
+	return tempTab;
 }
 
-bool compDate(){
+bool compDate(ts t,ts tOld){
 	bool res =false;
 	getDate();
 	long calcul1=t.hour*3600+t.min*60+t.sec;
@@ -182,15 +153,15 @@ bool compDate(){
 	}else{
 		lastCalcul=calcul1-calcul2;
 	}
-	if(lastCalcul>=frequenceMesure){
+	if(lastCalcul>=frequenceMesure)
+	{
 		res=true;
 	}
-//	Serial.print("La dernière mesure il y a : ");
-	Serial.print((lastCalcul));
-	Serial.print("sec\n");
+	Serial.println(lastCalcul);
 	return res;
 }
-void writeDataToSD() {
+void writeDataToSD(HumidityGND humidityGND,ts t,TempDHT11 temp) {
+	File dataFile;
 	  dataFile = SD.open("Data.csv",FILE_WRITE);
 
 	  // if the file opened okay, write to it:
@@ -208,15 +179,15 @@ void writeDataToSD() {
 				+":"
 				+dateToDigit(t.sec)
 				+","
-				+convertDataH(hsol1)
+				+humidityGND.hsol1
 				+","
-				+convertDataH(hsol2)
+				+humidityGND.hsol2
 				+","
-				+convertDataH(hsol3)
+				+humidityGND.hsol3
 				+","
-				+(int)temperature
+				+temp.temp
 				+","
-				+(int)humidity;
+				+temp.humidity;
 	    dataFile.println(data);
 	    Serial.println(data);
 	    // close the file:
@@ -229,6 +200,7 @@ void writeDataToSD() {
 }
 
 void initDataFile(){
+	File dataFile;
 	if(!SD.exists("Data.csv"))
 		{
 		dataFile = SD.open("Data.csv", FILE_WRITE);
@@ -246,20 +218,21 @@ void initDataFile(){
 }
 
 void initParamFile(){
+	File paramFile;
 	if(!SD.exists("Param.csv"))
 		{
-		dataFile = SD.open("Param.csv", FILE_WRITE);
-		if (dataFile) {
+		paramFile = SD.open("Param.csv", FILE_WRITE);
+		if (paramFile) {
 //				Serial.print("Init and Writing to Param.csv...");
-				dataFile.println("frequenceMesure,timerPump,limitHumidity");
-				String param=(String)frequenceMesure
+			paramFile.println("frequenceMesure,timerPump,limitHumidity");
+				String param=(String)FREQ_MESURE
 						+","
-						+(String)tempsArrosage
+						+(String)TEMPS_ARROSAGE
 						+","
-						+(String)limitHumidite;
-				dataFile.println(param);
+						+(String)LIMITE_HUMIDITE;
+				paramFile.println(param);
 				// close the file:
-				dataFile.close();
+				paramFile.close();
 				Serial.println("Param.csv is create.");
 		  } else {
 				// if the file didn't open, print an error:
@@ -270,10 +243,42 @@ void initParamFile(){
 		}
 }
 
+void writeDataToBLE(HumidityGND humidityGND,ts t,TempDHT11 temp) {
+  Serial.println("Writing to BLE");
+  /*String data=dateToDigit(t.year)
+  	    		+"-"
+  	    		+dateToDigit(t.mon)
+  				+"-"
+  				+dateToDigit(t.mday)
+  				+","
+  				+dateToDigit(t.hour)
+  				+":"
+  				+dateToDigit(t.min)
+  				+":"
+  				+dateToDigit(t.sec)
+  				+","
+  				+humidityGND.hsol1
+  				+","
+  				+humidityGND.hsol2
+  				+","
+  				+humidityGND.hsol3
+  				+","
+  				+temp.temp
+  				+","
+  				+temp.humidity;
+  char copyData[data.length()];
+  data.toCharArray(copyData,data.length()+1);
+  BLESerial.write(copyData, data.length()+1);*/
+  BLESerial.write("yo");
+}
+
 void readParamSD (){
 	//todo lire les params sur SD si le fichier existe
 	//sinon creer le fichier avec valeurs par défaut
 	//myFile=SD.open("Param.csv",FILE_READ);
+	frequenceMesure=FREQ_MESURE;
+	limiteHumidite=LIMITE_HUMIDITE;
+	temspArrosage=TEMPS_ARROSAGE;
 }
 
 void refreshParamToSD(){
@@ -281,19 +286,22 @@ void refreshParamToSD(){
 }
 
 void setup() {
- Serial.begin(9600);
-
+ Serial.begin(115200);
+ while (!Serial) {
+     ; // wait for serial port to connect. Needed for native USB port only
+   }
+ BLESerial.begin(9600);
  Wire.begin();
  DS3231_init(DS3231_INTCN);
 
- pinMode(pinAnaH1,INPUT);
- pinMode(pinDigiH1,INPUT);
- pinMode(pinAnaH2,INPUT);
- pinMode(pinDigiH2,INPUT);
- pinMode(pinAnaH3,INPUT);
- pinMode(pinDigiH3,INPUT);
+ pinMode(PIN_ANA_H1,INPUT);
+ pinMode(PIN_DIGIT_H1,INPUT);
+ pinMode(PIN_ANA_H2,INPUT);
+ pinMode(PIN_DIGIT_H2,INPUT);
+ pinMode(PIN_ANA_H3,INPUT);
+ pinMode(PIN_DIGIT_H3,INPUT);
 
- pinMode(pinPompe,OUTPUT);
+ pinMode(PIN_POMPE,OUTPUT);
 
  demandMAJ=false;
  demandLaunchPump=false;
@@ -307,47 +315,45 @@ void setup() {
   }
   Serial.println("initialization done.");
 
- //obtenir les premières données
- getDate();
- tOld=t;
- getHumidityGnd();
- getHumidityAir();
- //checkHumidity();
  initParamFile();
  initDataFile();
- writeDataToSD();
 
  //todo init les params en lisant fichier de param
-// readParamSD();
- //LastMAJ = temps actuelle;
+ readParamSD();
+
+ tG =getDate();
+ tOld=tG;
  Serial.print("Welcome in SmartGreen \n");
 
 }
 
 
 void loop() {
+	tG =getDate();
 
-//	getDate();
-//	getHumidite();
-//	checkHumidity();
-	if(demandMAJ || compDate())
+	if(demandMAJ || compDate(tG,tOld))
 	{
-		getDate();
-		getHumidityGnd();
-		getHumidityAir();
-		writeDataToSD();
+		//tG =getDate();
+		HumidityGND humi=getHumidityGnd();
+		TempDHT11 temp=getHumidityAir();
+		writeDataToSD(humi,tG,temp);
 
 		if(demandMAJ){
-			//todo envoi de données via Bluetooth
+			writeDataToBLE(humi,tG,temp);
 		}
-		else checkHumidityGnd();
+		else {
+			if(checkHumidityGnd(humi)){
+				launchPump(temspArrosage);
+			}
+		}
 
-		tOld=t;
+		writeDataToBLE(humi,tG,temp);
+		tOld=tG;
 		demandMAJ=false;
 	 }
 
 	if(demandLaunchPump){
-		launchPump(tempsArrosage);
+		launchPump(TEMPS_ARROSAGE);
 		demandLaunchPump=false;
 	}
 
